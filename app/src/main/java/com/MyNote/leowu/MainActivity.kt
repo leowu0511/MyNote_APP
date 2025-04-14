@@ -20,6 +20,7 @@ import com.MyNote.leowu.ui.HomeScreen
 import com.MyNote.leowu.ui.NoteScreen
 import com.MyNote.leowu.ui.NoteViewModel
 import com.MyNote.leowu.ui.theme.MyNoteTheme
+import androidx.activity.compose.BackHandler
 
 class MainActivity : ComponentActivity() {
     
@@ -54,6 +55,9 @@ class MainActivity : ComponentActivity() {
                             )
                         }
                         Screen.EDITOR -> {
+                            BackHandler(enabled = true) {
+                                currentScreen = Screen.HOME
+                            }
                             NoteScreen(
                                 viewModel = noteViewModel,
                                 initialNote = selectedNote,

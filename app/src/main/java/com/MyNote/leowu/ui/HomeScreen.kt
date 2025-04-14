@@ -1,5 +1,8 @@
 package com.MyNote.leowu.ui
 
+import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -15,10 +18,14 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.material.icons.filled.Close
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -69,6 +76,9 @@ fun HomeScreen(
     var showFilterMenu by remember { mutableStateOf(false) }
     val currentFilterOption by viewModel.filterOption.collectAsState()
     
+    val isInSelectionMode by viewModel.isInSelectionMode.collectAsState()
+    val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
+    
     val filterOptions = mapOf(
         FilterOption.ALL to "全部筆記",
         FilterOption.RECENT to "最近更新",
@@ -77,21 +87,45 @@ fun HomeScreen(
     
     val selectedFilterText = filterOptions[currentFilterOption] ?: "全部筆記"
 
+    BackHandler(enabled = isInSelectionMode) {
+        viewModel.exitSelectionMode()
+    }
+
     Scaffold(
         topBar = {
-            TopAppBar(
-                title = { Text("我的筆記") }
-            )
+            if (isInSelectionMode) {
+                SelectionModeTopAppBar(
+                    selectedCount = selectedNoteIds.size,
+                    onCancelClick = { viewModel.exitSelectionMode() },
+                    onDeleteClick = { viewModel.deleteSelectedNotes() }
+                )
+            } else {
+                DefaultTopAppBar(
+                    searchQuery = searchQuery,
+                    onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                    selectedFilterText = selectedFilterText,
+                    showFilterMenu = showFilterMenu,
+                    onFilterIconClick = { showFilterMenu = true },
+                    onDismissFilterMenu = { showFilterMenu = false },
+                    filterOptions = filterOptions,
+                    onFilterOptionSelected = { option ->
+                        viewModel.setFilterOption(option)
+                        showFilterMenu = false
+                    }
+                )
+            }
         },
         floatingActionButton = {
-            FloatingActionButton(
-                onClick = onAddNoteClick,
-                containerColor = MaterialTheme.colorScheme.primary
-            ) {
-                Icon(
-                    imageVector = Icons.Default.Add,
-                    contentDescription = "新增筆記"
-                )
+            if (!isInSelectionMode) {
+                FloatingActionButton(
+                    onClick = onAddNoteClick,
+                    containerColor = MaterialTheme.colorScheme.primary
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Add,
+                        contentDescription = "新增筆記"
+                    )
+                }
             }
         }
     ) { paddingValues ->
@@ -104,62 +138,15 @@ fun HomeScreen(
             Column(
                 modifier = Modifier
                     .fillMaxSize()
-                    .padding(16.dp)
+                    .padding(horizontal = 8.dp)
             ) {
-                // 搜尋欄和篩選選單
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.fillMaxWidth()
-                ) {
-                    OutlinedTextField(
-                        value = searchQuery,
-                        onValueChange = { viewModel.setSearchQuery(it) },
-                        placeholder = { Text("搜尋筆記") },
-                        modifier = Modifier.weight(1f),
-                        leadingIcon = {
-                            Icon(Icons.Default.Search, contentDescription = "搜尋")
-                        },
-                        singleLine = true
-                    )
-                    
-                    Spacer(modifier = Modifier.width(8.dp))
-                    
-                    // 篩選按鈕與下拉選單
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = selectedFilterText,
-                            style = MaterialTheme.typography.bodyMedium
-                        )
-                        
-                        IconButton(onClick = { showFilterMenu = true }) {
-                            Icon(Icons.Default.FilterList, contentDescription = "篩選")
-                        }
-                    }
-                    
-                    DropdownMenu(
-                        expanded = showFilterMenu,
-                        onDismissRequest = { showFilterMenu = false }
-                    ) {
-                        filterOptions.forEach { (option, text) ->
-                            DropdownMenuItem(
-                                text = { Text(text) },
-                                onClick = {
-                                    viewModel.setFilterOption(option)
-                                    showFilterMenu = false
-                                }
-                            )
-                        }
-                    }
-                }
+                Spacer(modifier = Modifier.height(8.dp))
                 
-                Spacer(modifier = Modifier.height(16.dp))
-                
-                // 筆記網格
                 if (notes.isEmpty()) {
                     Column(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(16.dp),
                         verticalArrangement = Arrangement.Center,
                         horizontalAlignment = Alignment.CenterHorizontally
                     ) {
@@ -170,16 +157,36 @@ fun HomeScreen(
                     }
                 } else {
                     LazyVerticalGrid(
-                        columns = GridCells.Adaptive(minSize = 160.dp),
-                        contentPadding = PaddingValues(bottom = 80.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        verticalArrangement = Arrangement.spacedBy(12.dp)
+                        columns = GridCells.Fixed(2),
+                        contentPadding = PaddingValues(
+                            start = 8.dp,
+                            end = 8.dp,
+                            bottom = 80.dp
+                        ),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                        verticalArrangement = Arrangement.spacedBy(8.dp)
                     ) {
                         items(notes) { note ->
+                            val isSelected = selectedNoteIds.contains(note.id)
                             NoteCard(
-                                note = note, 
+                                note = note,
                                 searchQuery = searchQuery,
-                                onClick = { onNoteClick(note) }
+                                isSelected = isSelected,
+                                isInSelectionMode = isInSelectionMode,
+                                onClick = {
+                                    if (isInSelectionMode) {
+                                        viewModel.toggleNoteSelection(note.id)
+                                    } else {
+                                        onNoteClick(note)
+                                    }
+                                },
+                                onLongClick = {
+                                    if (!isInSelectionMode) {
+                                        viewModel.enterSelectionMode()
+                                        viewModel.toggleNoteSelection(note.id)
+                                    }
+                                },
+                                modifier = Modifier.fillMaxWidth()
                             )
                         }
                     }
@@ -189,111 +196,177 @@ fun HomeScreen(
     }
 }
 
-// 產生帶有高亮效果的 AnnotatedString
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DefaultTopAppBar(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    selectedFilterText: String,
+    showFilterMenu: Boolean,
+    onFilterIconClick: () -> Unit,
+    onDismissFilterMenu: () -> Unit,
+    filterOptions: Map<FilterOption, String>,
+    onFilterOptionSelected: (FilterOption) -> Unit
+) {
+    TopAppBar(
+        title = { Text("我的筆記") },
+        actions = {
+            OutlinedTextField(
+                value = searchQuery,
+                onValueChange = onSearchQueryChange,
+                placeholder = { Text("搜尋") },
+                modifier = Modifier.weight(1f).padding(end = 8.dp),
+                leadingIcon = {
+                    Icon(Icons.Default.Search, contentDescription = "搜尋")
+                },
+                singleLine = true
+            )
+
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    text = selectedFilterText,
+                    style = MaterialTheme.typography.labelMedium
+                )
+                IconButton(onClick = onFilterIconClick) {
+                    Icon(Icons.Default.FilterList, contentDescription = "篩選")
+                }
+            }
+
+            DropdownMenu(
+                expanded = showFilterMenu,
+                onDismissRequest = onDismissFilterMenu
+            ) {
+                filterOptions.forEach { (option, text) ->
+                    DropdownMenuItem(
+                        text = { Text(text) },
+                        onClick = { onFilterOptionSelected(option) }
+                    )
+                }
+            }
+        }
+    )
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SelectionModeTopAppBar(
+    selectedCount: Int,
+    onCancelClick: () -> Unit,
+    onDeleteClick: () -> Unit
+) {
+    TopAppBar(
+        title = { Text("已選取 $selectedCount 項") },
+        navigationIcon = {
+            IconButton(onClick = onCancelClick) {
+                Icon(Icons.Default.Close, contentDescription = "取消")
+            }
+        },
+        actions = {
+            IconButton(onClick = onDeleteClick, enabled = selectedCount > 0) {
+                Icon(Icons.Default.Delete, contentDescription = "刪除")
+            }
+        }
+    )
+}
+
 private fun highlightText(text: String, query: String): AnnotatedString {
-    // 如果搜尋關鍵字為空，直接返回原文本
     if (query.isBlank()) {
         return AnnotatedString(text)
     }
-    
     return buildAnnotatedString {
         val lowerCaseText = text.lowercase(Locale.getDefault())
         val lowerCaseQuery = query.lowercase(Locale.getDefault())
-        
-        // 跟踪當前處理到的索引位置
         var currentIndex = 0
-        
-        // 找出所有匹配的索引
         var matchIndex = lowerCaseText.indexOf(lowerCaseQuery, currentIndex)
         while (matchIndex >= 0) {
-            // 添加匹配前的一般文本
             append(text.substring(currentIndex, matchIndex))
-            
-            // 添加高亮的匹配文本
             val endIndex = matchIndex + query.length
-            withStyle(
-                style = SpanStyle(
-                    background = Color(0xFFFFFF88)  // 淡黃色背景
-                )
-            ) {
+            withStyle(style = SpanStyle(background = Color(0xFFFFFF88))) {
                 append(text.substring(matchIndex, endIndex))
             }
-            
-            // 更新當前處理位置
             currentIndex = endIndex
-            
-            // 查找下一個匹配
             matchIndex = lowerCaseText.indexOf(lowerCaseQuery, currentIndex)
         }
-        
-        // 添加剩餘的文本
         if (currentIndex < text.length) {
             append(text.substring(currentIndex))
         }
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalFoundationApi::class)
 @Composable
 fun NoteCard(
     note: Note,
     searchQuery: String,
-    onClick: () -> Unit
+    isSelected: Boolean,
+    isInSelectionMode: Boolean,
+    onClick: () -> Unit,
+    onLongClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     val dateFormat = SimpleDateFormat("yyyy/MM/dd HH:mm", Locale.getDefault())
     val formattedDate = dateFormat.format(Date(note.timestamp))
     val isDarkTheme = isSystemInDarkTheme()
     
-    // 計算高亮後的標題文本
     val titleText = note.title.ifEmpty { "無標題筆記" }
     val highlightedTitle = highlightText(titleText, searchQuery)
-    
-    // 計算高亮後的內容文本
     val highlightedContent = highlightText(note.content, searchQuery)
     
     Card(
-        onClick = onClick,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(180.dp),
+        modifier = modifier
+            .height(160.dp)
+            .combinedClickable(
+                onClick = onClick,
+                onLongClick = onLongClick
+            ),
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp),
+        shape = MaterialTheme.shapes.medium,
         colors = CardDefaults.cardColors(
-            containerColor = MaterialTheme.colorScheme.surface
+            containerColor = if (isSelected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
         ),
         border = BorderStroke(
-            width = 0.5.dp, 
-            color = if (isDarkTheme) NoteCardBorderDark else NoteCardBorder
+            width = if (isSelected) 1.5.dp else 0.5.dp,
+            color = if (isSelected) MaterialTheme.colorScheme.primary 
+                    else if (isDarkTheme) NoteCardBorderDark else NoteCardBorder
         )
     ) {
         Column(
             modifier = Modifier
                 .fillMaxSize()
-                .padding(12.dp)
+                .padding(horizontal = 12.dp, vertical = 10.dp)
         ) {
-            // 標題
+            if (isInSelectionMode) {
+                Checkbox(
+                    checked = isSelected,
+                    onCheckedChange = { onClick() },
+                    modifier = Modifier.align(Alignment.End).padding(bottom = 4.dp)
+                )
+            }
+            
             Text(
                 text = highlightedTitle,
                 style = MaterialTheme.typography.titleMedium,
-                fontWeight = FontWeight.Bold,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                fontWeight = FontWeight.SemiBold,
+                maxLines = 2,
+                overflow = TextOverflow.Ellipsis,
+                modifier = if (isInSelectionMode) Modifier.padding(top=0.dp) else Modifier.padding(top=26.dp)
             )
             
-            // 時間
             Text(
                 text = formattedDate,
                 style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 4.dp)
             )
             
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(6.dp))
             
-            // 內容
             Text(
                 text = highlightedContent,
                 style = MaterialTheme.typography.bodyMedium,
-                maxLines = 3,
-                overflow = TextOverflow.Ellipsis
+                maxLines = if(isInSelectionMode) 2 else 3,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(top = 2.dp)
             )
         }
     }

@@ -12,7 +12,9 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.wrapContentSize
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
@@ -23,6 +25,7 @@ import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.FilterList
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
@@ -35,10 +38,14 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
+import androidx.compose.material3.SnackbarHost
+import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
 import androidx.compose.material3.TopAppBar
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -79,6 +86,24 @@ fun HomeScreen(
     val isInSelectionMode by viewModel.isInSelectionMode.collectAsState()
     val selectedNoteIds by viewModel.selectedNoteIds.collectAsState()
     
+    val showSaveNotification by viewModel.showSaveNotification.collectAsState()
+    val saveNotificationType by viewModel.saveNotificationType.collectAsState()
+    val snackbarHostState = remember { SnackbarHostState() }
+    
+    LaunchedEffect(showSaveNotification) {
+        if (showSaveNotification) {
+            val message = when (saveNotificationType) {
+                SaveNotificationType.AUTO -> "已自動儲存"
+                SaveNotificationType.MANUAL -> "已手動儲存筆記"
+                else -> ""
+            }
+            if (message.isNotEmpty()) {
+                snackbarHostState.showSnackbar(message)
+            }
+            viewModel.clearSaveNotification()
+        }
+    }
+    
     val filterOptions = mapOf(
         FilterOption.ALL to "全部筆記",
         FilterOption.RECENT to "最近更新",
@@ -111,7 +136,8 @@ fun HomeScreen(
                     onFilterOptionSelected = { option ->
                         viewModel.setFilterOption(option)
                         showFilterMenu = false
-                    }
+                    },
+                    viewModel = viewModel
                 )
             }
         },
@@ -127,7 +153,8 @@ fun HomeScreen(
                     )
                 }
             }
-        }
+        },
+        snackbarHost = { SnackbarHost(snackbarHostState) }
     ) { paddingValues ->
         Surface(
             modifier = Modifier
@@ -206,41 +233,92 @@ private fun DefaultTopAppBar(
     onFilterIconClick: () -> Unit,
     onDismissFilterMenu: () -> Unit,
     filterOptions: Map<FilterOption, String>,
-    onFilterOptionSelected: (FilterOption) -> Unit
+    onFilterOptionSelected: (FilterOption) -> Unit,
+    viewModel: NoteViewModel
 ) {
+    val showSettingsMenu by viewModel.showSettingsMenu.collectAsState()
+    val isAutoSaveEnabled by viewModel.isAutoSaveEnabled.collectAsState()
+    
     TopAppBar(
-        title = { Text("我的筆記") },
+        title = {
+            Row(
+                horizontalArrangement = Arrangement.Start,
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.fillMaxWidth()
+            ) {
+                // 左側空白
+                Spacer(modifier = Modifier.weight(0.5f))
+                
+                // 設定按鈕放在中間位置
+                IconButton(onClick = { viewModel.toggleSettingsMenu() }) {
+                    Icon(
+                        imageVector = Icons.Default.Settings, 
+                        contentDescription = "設定",
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+                
+                // 右側空間
+                Spacer(modifier = Modifier.weight(0.5f))
+                
+                // 搜尋框
+                OutlinedTextField(
+                    value = searchQuery,
+                    onValueChange = onSearchQueryChange,
+                    placeholder = { Text("搜尋") },
+                    modifier = Modifier
+                        .width(260.dp)
+                        .padding(end = 8.dp),
+                    leadingIcon = {
+                        Icon(Icons.Default.Search, contentDescription = "搜尋")
+                    },
+                    singleLine = true
+                )
+                
+                // 設定菜單
+                DropdownMenu(
+                    expanded = showSettingsMenu,
+                    onDismissRequest = { viewModel.closeSettingsMenu() },
+                    modifier = Modifier.width(250.dp)
+                ) {
+                    DropdownMenuItem(
+                        text = { Text("自動儲存") },
+                        trailingIcon = {
+                            Switch(
+                                checked = isAutoSaveEnabled,
+                                onCheckedChange = { viewModel.toggleAutoSave() }
+                            )
+                        },
+                        onClick = { viewModel.toggleAutoSave() }
+                    )
+                }
+            }
+        },
         actions = {
-            OutlinedTextField(
-                value = searchQuery,
-                onValueChange = onSearchQueryChange,
-                placeholder = { Text("搜尋") },
-                modifier = Modifier.weight(1f).padding(end = 8.dp),
-                leadingIcon = {
-                    Icon(Icons.Default.Search, contentDescription = "搜尋")
-                },
-                singleLine = true
-            )
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
+                modifier = Modifier.wrapContentSize(Alignment.TopEnd)
+            ) {
                 Text(
                     text = selectedFilterText,
                     style = MaterialTheme.typography.labelMedium
                 )
+                
                 IconButton(onClick = onFilterIconClick) {
                     Icon(Icons.Default.FilterList, contentDescription = "篩選")
                 }
-            }
-
-            DropdownMenu(
-                expanded = showFilterMenu,
-                onDismissRequest = onDismissFilterMenu
-            ) {
-                filterOptions.forEach { (option, text) ->
-                    DropdownMenuItem(
-                        text = { Text(text) },
-                        onClick = { onFilterOptionSelected(option) }
-                    )
+                
+                DropdownMenu(
+                    expanded = showFilterMenu,
+                    onDismissRequest = onDismissFilterMenu,
+                    modifier = Modifier.width(200.dp)
+                ) {
+                    filterOptions.forEach { (option, text) ->
+                        DropdownMenuItem(
+                            text = { Text(text) },
+                            onClick = { onFilterOptionSelected(option) }
+                        )
+                    }
                 }
             }
         }
